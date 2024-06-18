@@ -4,7 +4,7 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.contrib.auth import authenticate,login,logout
 from django.contrib.auth.models import User
-
+from .models import Message,UserChannel
 from django.db.models import Q
 
 
@@ -94,8 +94,28 @@ class Home(View):
         return redirect('main')
 
 
+
 class ChatPerson(View):
     def get(self,request,id):
         
-       
-        return render(request=request,template_name='chat/chat_person.html')
+        person=User.objects.get(id=id)
+        me=request.user
+        
+        messages=Message.objects.filter(Q(from_who=me,to_who=person) | Q(from_who=person,to_who=me)).order_by('date','time')
+        
+        user_channel_name = UserChannel.objects.get(user=person)
+        data={
+                "type": "receiver_function",
+                "type_of_data":"the_messages_has_been_seen_from_the_other",
+                }
+        channel_layer=get_channel_layer()
+        async_to_sync(channel_layer.send)(user_channel_name.channel_name,data)
+        
+        messages_have_not_been_seen = Message.objects.filter(from_who=person,to_who=me)
+        messages_have_not_been_seen.update(has_been_seen=True)
+        context={
+            'person':person,
+            'me':me,
+            'messages':messages,
+        }
+        return render(request=request,template_name='chat/chat_person.html',context=context)
